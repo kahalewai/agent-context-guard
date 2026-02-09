@@ -140,7 +140,7 @@ src/agent_context_guard/
 
 ## CLI Commands
 
-agent-context-guard provides a complete CLI for managing protected files:
+Agent Context Guard provides a complete CLI for managing protected files:
 
 | Command | Description |
 |---------|-------------|
@@ -162,7 +162,7 @@ Use `agent-context-guard <command> --help` for detailed options on any command.
 
 ## Works with Your Existing Agent Framework
 
-agent-context-guard was designed to work with any AI agent framework:
+Agent Context Guard was designed to work with any AI agent framework:
 
 * No assumptions about agent framework or prompt format
 * Zero-code-change adoption via the CLI wrapper (`agent-context-guard run`)
@@ -188,7 +188,7 @@ agent-context-guard was designed to work with any AI agent framework:
 
 ## Out of Scope
 
-agent-context-guard does not:
+Agent Context Guard does not:
 * Provide object-level authorization within files
 * Act as a general-purpose file integrity monitor
 * Replace authentication or identity management
