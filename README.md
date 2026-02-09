@@ -169,31 +169,20 @@ agent-context-guard was designed to work with any AI agent framework:
 * Python API available for deeper integration (no CLI wrapper)
 * LangChain adapter included, extensible to other frameworks
 * Works with single-agent and multi-agent systems
-
-<br>
-
-| Agent Authorized | Human Approved | File Integrity | Result |
-| ---------------- | -------------- | -------------- | ------ |
-| ✅ Read          | ✅              | ✅ Verified    | ALLOW  |
-| ✅ Write         | ❌              | ✅ Verified    | DENY   |
-| ✅ Propose       | ✅              | ✅ Verified    | ALLOW  |
-| ❌ Any           | ❌              | ❌ Tampered    | DENY   |
-
-<br>
-
-* Protection activates only under `agent-context-guard run` — no interference with normal development
+* Protection activates only under `agent-context-guard run`
+* No interference with normal development
 * All operations are logged to an append-only audit trail
-* Policy enforcement is deterministic — no LLM-based decisions
+* Policy enforcement is deterministic; no LLM-based decisions
 
 <br>
 
 ## Key Design Principles
 
-* **Runtime-only enforcement** — protection activates only under `run`
-* **Framework agnostic** — no assumptions about agent framework or prompt format
-* **Deterministic control** — all decisions are non-LLM-based
-* **Zero-code-change adoption** — use the CLI wrapper, no code changes needed
-* **Agent autonomy without authority** — agents propose, humans approve
+* **Runtime-only enforcement** - protection activates only under `run`
+* **Framework agnostic** - no assumptions about agent framework or prompt format
+* **Deterministic control** - all decisions are non-LLM-based
+* **Zero-code-change adoption** - use the CLI wrapper, no code changes needed
+* **Agent autonomy without authority** - agents propose, humans approve
 
 <br>
 
@@ -218,7 +207,7 @@ agent-context-guard does not:
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Apache License 2.0
 
 <br>
 
