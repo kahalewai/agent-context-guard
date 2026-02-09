@@ -2,10 +2,9 @@
   
 ![acg](https://github.com/user-attachments/assets/c5073b96-4dcf-47ec-942c-5b25bceb3b9a)
 
-[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
-
-Version 1.0.0
+[![License](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org)
+[![Version](https://img.shields.io/badge/version-1.0.0-red.svg)](https://github.com/kahalewai/agent-context-guard)
 
 </div>
 
