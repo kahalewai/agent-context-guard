@@ -18,15 +18,15 @@ Version 1.0.0
 
 ## Intro
 
-agent-context-guard is a runtime protection layer for AI agent markdown context files. Modern AI agents encode critical behavioral controls in plaintext markdown — persona definitions, tool instructions, rules, and skills. These files are implicitly trusted, mutable at runtime, and typically unprotected. agent-context-guard seals these files with cryptographic signatures, detects tampering at runtime, and ensures that only humans can approve changes.
+Agent Context Guard is a runtime protection layer for AI agent markdown context files. Modern AI agents encode critical behavioral controls in plaintext markdown, persona definitions, tool instructions, rules, and skills. These files are implicitly trusted, mutable at runtime, and typically unprotected. Agent Context Guard seals these files with cryptographic signatures, detects tampering at runtime, and ensures that only humans can approve changes.
 
-agent-context-guard is intended to:
+Agent Context Guard is intended to:
 * Seal markdown files with cryptographic hashes and HMAC signatures
-* Detect tampering — any modification to a protected file is caught immediately
+* Detect tampering; any modification to a protected file is caught immediately
 * Block unauthorized writes during agent runtime
-* Provide a proposal workflow — agents can *propose* changes but never approve them
-* Preserve human ownership — edit protected files anytime through explicit sessions
-* Log everything — append-only audit trail of all access, denials, and changes
+* Provide a proposal workflow; agents can propose changes but never approve them
+* Preserve human ownership; edit protected files anytime through explicit sessions
+* Log everything; append-only audit trail of all access, denials, and changes
 * Integrate into CI/CD pipelines for continuous integrity verification
 * Work with any agent framework without code changes
 
@@ -34,7 +34,7 @@ agent-context-guard is intended to:
 
 ## Core Requirement
 
-agent-context-guard enforces a single core requirement across all operations:
+Agent Context Guard enforces a single core requirement across all operations:
 
 <br>
 
@@ -49,7 +49,7 @@ This means that:
 * Agents can propose changes with justifications
 * All proposals require explicit human review and approval
 * Every file operation is cryptographically sealed and logged
-* Runtime protection is deterministic — no LLM-based decisions
+* Runtime protection is deterministic, no LLM-based decisions
 * Audit records capture every access, denial, and modification
 
 <br>
@@ -165,38 +165,13 @@ Use `agent-context-guard <command> --help` for detailed options on any command.
 
 <br>
 
-## Architecture
-
-```
-┌────────────────────────────────────┐
-│ Framework Adapters (Layer 3)       │
-│ (LangChain, custom frameworks)     │
-└──────────────┬─────────────────────┘
-               │
-┌──────────────▼─────────────────────┐
-│ Python API (Layer 1)               │
-│ read_md / propose_update           │
-└──────────────┬─────────────────────┘
-               │
-┌──────────────▼─────────────────────┐
-│ agent-context-guard Core           │
-│ • Policy Engine (deterministic)    │
-│ • Runtime Key Manager (ephemeral)  │
-│ • File Lifecycle Manager           │
-│ • Proposal Manager                 │
-│ • Audit Logger (append-only)       │
-└────────────────────────────────────┘
-```
-
-<br>
-
 ## Works with Your Existing Agent Framework
 
 agent-context-guard was designed to work with any AI agent framework:
 
 * No assumptions about agent framework or prompt format
 * Zero-code-change adoption via the CLI wrapper (`agent-context-guard run`)
-* Python API available for deeper integration
+* Python API available for deeper integration (no CLI wrapper)
 * LangChain adapter included, extensible to other frameworks
 * Works with single-agent and multi-agent systems
 
