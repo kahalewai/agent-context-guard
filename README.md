@@ -1,6 +1,7 @@
 <div align="center">
   
-![acg](https://github.com/user-attachments/assets/c5073b96-4dcf-47ec-942c-5b25bceb3b9a)
+<img width="456" height="400" alt="acg" src="https://github.com/user-attachments/assets/22dcee6a-7ae6-45c0-9134-72ac49251d84" />
+
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org)
