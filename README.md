@@ -1,11 +1,6 @@
 <div align="center">
-
-# Agent Context Guard
-
-**Runtime Protection for AI Agent Context Files**
-
-![acg](https://github.com/user-attachments/assets/bf1f22a9-1946-4ac5-a61e-ef7f94717522)
-
+  
+![acg](https://github.com/user-attachments/assets/c5073b96-4dcf-47ec-942c-5b25bceb3b9a)
 
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://python.org)
