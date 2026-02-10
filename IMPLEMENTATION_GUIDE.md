@@ -40,7 +40,7 @@ agent-context-guard --help
 ```
 src/agent_context_guard/
 ├── __init__.py            # Public API exports
-├── api.py                 # Layer 1 Python wrapper (read_md, propose_update, get_status)
+├── api.py                 # Python wrapper (read_md, propose_update, get_status)
 ├── core/
 │   ├── audit.py           # Append-only JSON Lines audit logger
 │   ├── constants.py       # Paths, defaults, file extensions
