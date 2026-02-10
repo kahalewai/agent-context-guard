@@ -1,4 +1,4 @@
-# Implementation Guide — agent-context-guard v1.0.0
+# Implementation Guide for Agent Context Guard v1.0.0
 
 Complete reference for installing, configuring, integrating, and maintaining agent-context-guard.
 
