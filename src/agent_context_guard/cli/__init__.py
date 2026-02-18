@@ -1,1 +1,1 @@
-"""CLI for agent-context-guard."""
+"""Agent Context Guard — CLI package."""
