@@ -1,6 +1,6 @@
 """Inventory: persistent registry of all protected files and their seal records.
 
-The inventory is stored as JSON at `.agent-context-guard/inventory.json`.
+The inventory is stored as JSON at `.Agent Context Guard/inventory.json`.
 All mutations are atomic (write-to-temp then rename) to prevent corruption.
 """
 
