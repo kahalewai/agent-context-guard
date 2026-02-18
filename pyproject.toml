@@ -4,23 +4,17 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-context-guard"
-version = "1.0.0"
-description = "Runtime protection for AI agent markdown context files"
+version = "1.0.1"
+description = "Integrity verification and access control for AI agent context files"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [
-    { name = "Kahalewai" },
+    { name = "Agent Context Guard contributors" },
 ]
 keywords = [
-    "ai",
-    "agent",
-    "security",
-    "runtime-protection",
-    "markdown",
-    "prompt-injection",
-    "llm",
-    "context-guard",
+    "ai", "agent", "security", "integrity", "verification",
+    "markdown", "llm", "context-guard", "audit", "seal",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -44,6 +38,19 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Framework adapters — install only what you need
+langchain = ["langchain-core>=0.1"]
+crewai = ["crewai>=0.1"]
+llamaindex = ["llama-index-core>=0.10"]
+autogen = ["pyautogen>=0.2"]
+# Install all adapters at once
+all = [
+    "langchain-core>=0.1",
+    "crewai>=0.1",
+    "llama-index-core>=0.10",
+    "pyautogen>=0.2",
+]
+# Development dependencies
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -53,12 +60,12 @@ dev = [
 
 [project.urls]
 Homepage = "https://github.com/kahalewai/agent-context-guard"
-Documentation = "https://github.com/kahalewai/agent-context-guard/blob/main/IMPLEMENTATION_GUIDE.md"
+Documentation = "https://github.com/kahalewai/agent-context-guard#readme"
 Repository = "https://github.com/kahalewai/agent-context-guard"
 Issues = "https://github.com/kahalewai/agent-context-guard/issues"
 
 [project.scripts]
-agent-context-guard = "agent_context_guard.cli.main:main"
+acg = "agent_context_guard.cli.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/agent_context_guard"]
