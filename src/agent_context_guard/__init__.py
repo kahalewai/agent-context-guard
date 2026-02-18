@@ -1,7 +1,7 @@
 """
 Agent Context Guard — __init__.py
 Version: 1.0.1
-Author: Agent Context Guard contributors
+Author: Kahalewai
 
 Integrity verification and access control for AI agent context files.
 
@@ -13,7 +13,7 @@ Primary entry point is the Guard class:
 """
 
 __version__ = "1.0.1"
-__author__ = "Agent Context Guard contributors"
+__author__ = "Kahalewai"
 __license__ = "Apache-2.0"
 
 from agent_context_guard.guard import Guard, GuardSession
