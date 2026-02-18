@@ -1,10 +1,18 @@
-"""Custom exceptions for agent-context-guard."""
+"""
+Agent Context Guard — core/exceptions.py
+Version: 1.0.1
+Author: Kahalewai
+
+Custom exception hierarchy for Agent Context Guard. Every exception
+inherits from AgentContextGuardError so callers can catch all guard
+errors with a single except clause when desired.
+"""
 
 from __future__ import annotations
 
 
 class AgentContextGuardError(Exception):
-    """Base exception for all agent-context-guard errors."""
+    """Base exception for all Agent Context Guard errors."""
 
 
 class SealError(AgentContextGuardError):
