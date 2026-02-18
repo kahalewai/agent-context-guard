@@ -1,1 +1,1 @@
-"""Core modules for agent-context-guard."""
+"""Agent Context Guard — core modules."""
