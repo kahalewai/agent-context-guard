@@ -1,4 +1,9 @@
-"""Self-Protection: HMAC integrity verification for guard metadata files.
+"""
+Agent Context Guard — core/selfprotect.py
+Version: 1.0.1
+Author: Kahalewai
+
+Self-Protection: HMAC integrity verification for guard metadata files.
 
 The guard must guard itself.  The inventory, policy, and audit files are
 critical security metadata.  If an attacker can modify them, all sealing
@@ -18,15 +23,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
-import tempfile
 from pathlib import Path
 
 from agent_context_guard.core.constants import (
     HMAC_KEY_LENGTH,
-    guard_dir,
     inventory_path,
     policy_path,
-    audit_log_path,
 )
 from agent_context_guard.core.exceptions import (
     InventoryCorruptedError,
@@ -96,7 +98,7 @@ def verify_metadata_file(file_path: Path, root: Path) -> bool:
     if not hmac.compare_digest(expected, stored):
         raise InventoryCorruptedError(
             f"Integrity check FAILED for {file_path.name}. "
-            "The file has been modified outside of agent-context-guard. "
+            "The file has been modified outside of Agent Context Guard. "
             "This may indicate tampering."
         )
     return True
