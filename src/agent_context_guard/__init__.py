@@ -1,31 +1,37 @@
 """
-agent-context-guard: Runtime protection for AI agent markdown context files.
+Agent Context Guard — __init__.py
+Version: 1.0.1
+Author: Agent Context Guard contributors
 
-Prevents unauthorized viewing, modification, and silent drift of markdown files
-that influence AI agent behavior, while preserving human ownership and editability.
+Integrity verification and access control for AI agent context files.
+
+Primary entry point is the Guard class:
+
+    from agent_context_guard import Guard
+    guard = Guard("/path/to/project")
+    content = guard.read("prompts/persona.md", agent_id="my-agent")
 """
 
-__version__ = "1.0.0"
-__author__ = "agent-context-guard contributors"
+__version__ = "1.0.1"
+__author__ = "Agent Context Guard contributors"
 __license__ = "Apache-2.0"
 
+from agent_context_guard.guard import Guard, GuardSession
 from agent_context_guard.core.seal import seal_file, verify_seal, verify_and_read
 from agent_context_guard.core.inventory import Inventory
 from agent_context_guard.core.policy import PolicyEngine
-from agent_context_guard.core.runtime import RuntimeGuard
-from agent_context_guard.core.proposals import ProposalManager
 from agent_context_guard.core.audit import AuditLogger
-from agent_context_guard.api import read_md, propose_update, get_status
+from agent_context_guard.core.proposals import ProposalManager
+from agent_context_guard.core.exceptions import (
+    AgentContextGuardError, GuardNotInitializedError, PolicyDeniedError,
+    SealError, SealIntegrityError, SealNotFoundError, FileLockedError,
+    ProposalError, InventoryError, InventoryCorruptedError, KeyManagementError,
+)
 
 __all__ = [
-    "seal_file",
-    "verify_seal",
-    "Inventory",
-    "PolicyEngine",
-    "RuntimeGuard",
-    "ProposalManager",
-    "AuditLogger",
-    "read_md",
-    "propose_update",
-    "get_status",
+    "Guard", "GuardSession", "seal_file", "verify_seal", "verify_and_read",
+    "Inventory", "PolicyEngine", "AuditLogger", "ProposalManager",
+    "AgentContextGuardError", "GuardNotInitializedError", "PolicyDeniedError",
+    "SealError", "SealIntegrityError", "SealNotFoundError", "FileLockedError",
+    "ProposalError", "InventoryError", "InventoryCorruptedError", "KeyManagementError",
 ]
