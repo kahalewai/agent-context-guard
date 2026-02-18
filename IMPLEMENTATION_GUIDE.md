@@ -1,15 +1,71 @@
-# Implementation Guide for Agent Context Guard v1.0.0
+# Agent Context Guard — Implementation Guide
 
-Complete reference for installing, configuring, integrating, and maintaining agent-context-guard.
+**Version 1.0.1** · Agent Context Guard contributors
+
+This guide provides detailed, step-by-step instructions for installing, configuring, integrating, and maintaining Agent Context Guard in your AI agent projects.
 
 <br>
 
-## 1. Installation
+## Table of Contents
+
+1. [Overview](#overview)
+2. [Installation](#installation)
+3. [Initialization](#initialization)
+4. [Protecting Files](#protecting-files)
+5. [Reading Protected Files (Library API)](#reading-protected-files-library-api)
+6. [Proposing Changes](#proposing-changes)
+7. [Reviewing and Approving Proposals](#reviewing-and-approving-proposals)
+8. [Running Agents Under the Guard](#running-agents-under-the-guard)
+9. [Human Edit Sessions](#human-edit-sessions)
+10. [Monitoring and Status](#monitoring-and-status)
+11. [Tamper Detection and Recovery](#tamper-detection-and-recovery)
+12. [Audit Log](#audit-log)
+13. [Key Rotation](#key-rotation)
+14. [CI/CD Integration](#cicd-integration)
+15. [Framework Adapters](#framework-adapters)
+16. [Policy Configuration](#policy-configuration)
+17. [Security Model](#security-model)
+18. [Troubleshooting](#troubleshooting)
+
+<br>
+
+## Overview
+
+Agent Context Guard protects markdown files that control AI agent behavior. It works by:
+
+1. **Sealing** files with SHA-256 content hashes and HMAC-SHA256 signatures
+2. **Verifying** integrity on every read through the `Guard.read()` API
+3. **Enforcing policy** agents can read and propose, only humans can approve
+4. **Logging** every operation to a hash-chained, tamper-evident audit trail
+5. **Recovering** from unauthorized modifications with the `acg recover` workflow
+
+The primary interface is the `Guard` class in Python. The `acg` CLI provides tooling for initialization, monitoring, and human workflows.
+
+<br>
+
+## Installation
 
 ### From PyPI
 
 ```bash
 pip install agent-context-guard
+```
+
+### Verify
+
+```bash
+acg --version
+# Agent Context Guard, version 1.0.1
+```
+
+### With Framework Adapters
+
+```bash
+pip install agent-context-guard[langchain]    # LangChain adapter
+pip install agent-context-guard[crewai]       # CrewAI adapter
+pip install agent-context-guard[llamaindex]   # LlamaIndex adapter
+pip install agent-context-guard[autogen]      # AutoGen adapter
+pip install agent-context-guard[all]          # All adapters
 ```
 
 ### From Source
@@ -20,851 +76,496 @@ cd agent-context-guard
 pip install -e ".[dev]"
 ```
 
-### Requirements
-
-- Python 3.10+
-- Dependencies (installed automatically): `click`, `cryptography`, `pyyaml`, `rich`
-- No external services, databases, or daemons
-
-### Verify
-
-```bash
-agent-context-guard --version
-agent-context-guard --help
-```
-
 <br>
 
-## 2. Project Structure
+## Initialization
 
-```
-src/agent_context_guard/
-├── __init__.py            # Public API exports
-├── api.py                 # Python wrapper (read_md, propose_update, get_status)
-├── core/
-│   ├── audit.py           # Append-only JSON Lines audit logger
-│   ├── constants.py       # Paths, defaults, file extensions
-│   ├── edit.py            # Human edit session lifecycle
-│   ├── exceptions.py      # Full exception hierarchy
-│   ├── inventory.py       # Atomic-write seal record registry
-│   ├── policy.py          # Deterministic policy engine
-│   ├── proposals.py       # Agent proposal workflow
-│   ├── runtime.py         # Runtime guard (ephemeral keys, subprocess, locking)
-│   └── seal.py            # SHA-256 hashing + HMAC-SHA256 signing
-├── cli/
-│   ├── helpers.py         # Rich terminal output helpers
-│   └── main.py            # All CLI commands (Click)
-├── adapters/
-│   └── base.py            # BaseAdapter + LangChainAdapter
-└── interceptors/
-    └── python_hook.py     # Monkey-patch open()/Path.read_text()
+Initialize Agent Context Guard in your project root:
+
+```bash
+cd /path/to/your/project
+acg init
 ```
 
-### Guard Directory (created by `init`)
+This creates the `.agent-context-guard/` directory containing:
 
 ```
 .agent-context-guard/
-├── .gitignore          # Excludes keys/ and locks/ from version control
-├── inventory.json      # Sealed file registry
-├── audit.log           # Append-only event log
-├── policy.yaml         # Access control policy
-├── keys/signing.key    # HMAC signing key (32 bytes, mode 0600)
-├── proposals/          # Agent change proposals (JSON + diffs)
-└── locks/              # Runtime file locks
+├── keys/
+│   └── signing.key          # HMAC signing key (chmod 600)
+├── proposals/               # Agent change proposals
+├── locks/                   # Edit session locks
+├── backups/                 # Archived audit logs and file backups
+├── inventory.json           # Registry of all protected files
+├── inventory.json.hmac      # HMAC sidecar for integrity
+├── policy.yaml              # Access control policy
+├── policy.yaml.hmac         # HMAC sidecar for integrity
+├── audit.log                # Hash-chained audit trail
+└── .gitignore               # Excludes keys/, locks/, backups/
 ```
+
+**Important:** The `keys/` directory is automatically excluded from version control. Never commit signing keys.
 
 <br>
 
-## 3. Getting Started
+## Protecting Files
+
+Register markdown files for cryptographic protection:
 
 ```bash
-# 1. Initialize
-cd your-agent-project
-agent-context-guard init
+# Protect specific files
+acg protect prompts/persona.md prompts/rules.md
 
-# 2. Protect files
-agent-context-guard protect prompts/persona.md prompts/rules.md
-agent-context-guard protect 'config/**/*.md'
+# Protect with glob patterns
+acg protect "prompts/*.md"
 
-# 3. Run agent under guard
-agent-context-guard run -- python my_agent.py
-
-# 4. Check status
-agent-context-guard status
-
-# 5. CI/CD verification
-agent-context-guard verify
+# Protect recursively
+acg protect "**/*.md"
 ```
+
+Each protected file gets:
+
+- A SHA-256 content hash stored in the inventory
+- An HMAC-SHA256 signature using the project signing key
+- A version number (starting at 1)
+- A timestamp and author record
 
 <br>
 
-## 4. CLI Reference
+## Reading Protected Files (Library API)
 
-### `init`
-
-```bash
-agent-context-guard init [-p PATH]
-```
-
-Creates `.agent-context-guard/`, generates signing key, sets up default policy and empty inventory. Idempotent — warns if already initialized.
-
-### `protect`
-
-```bash
-agent-context-guard protect FILES... [-a AUTHOR]
-```
-
-Accepts file paths or glob patterns. Each markdown file (`.md`, `.markdown`, `.mdown`, `.mkd`, `.mkdn`) is sealed with SHA-256 + HMAC-SHA256 and added to the inventory with state `ACTIVE`. Skips files already protected.
-
-### `run`
-
-```bash
-agent-context-guard run -- COMMAND [ARGS...]
-```
-
-Workflow:
-1. Generate ephemeral Fernet key (exists only in memory)
-2. Verify all sealed files against inventory
-3. Run command as subprocess (key passed via `ACG_RUNTIME_KEY` env var)
-4. On exit: zero out key, release locks, flush audit
-
-Exits with code 2 if seal verification fails (command is never started).
-
-### `edit`
-
-```bash
-agent-context-guard edit FILE [-a AUTHOR] [-e EDITOR]
-```
-
-Human edit session workflow:
-1. Lock the file (agents cannot read while locked)
-2. Create temporary working copy
-3. Open in `$EDITOR` (or `--editor`)
-4. On save: write atomically, re-seal as new version
-5. Unlock file
-
-If no changes are made, the file is not re-sealed.
-
-### `status`
-
-```bash
-agent-context-guard status [FILES...]
-```
-
-Displays a Rich table: file path, state, version, author, seal timestamp, pending proposal count. With no arguments, shows all protected files.
-
-### `diff`
-
-```bash
-agent-context-guard diff FILE
-```
-
-Shows unified diffs of all pending proposals for a file with agent ID, timestamp, and justification.
-
-### `approve`
-
-```bash
-agent-context-guard approve FILE [-p PROPOSAL_ID] [-a AUTHOR] [-y]
-```
-
-Applies a pending proposal:
-1. Shows the diff and proposal metadata
-2. Prompts for confirmation (skip with `-y`)
-3. Writes proposed content to disk
-4. Re-seals as new version
-5. Updates proposal status to `approved`
-
-Without `-p`, approves the latest pending proposal.
-
-### `reject`
-
-```bash
-agent-context-guard reject FILE [-p PROPOSAL_ID]
-```
-
-Marks a proposal as `rejected`. Does not modify the file.
-
-### `audit`
-
-```bash
-agent-context-guard audit [-e EVENT] [-f FILE] [-a ACTOR] [-n LIMIT]
-```
-
-Displays audit entries in a formatted table. Filters: event type, file path, actor identity, max entries (default 50).
-
-### `verify`
-
-```bash
-agent-context-guard verify
-```
-
-Checks every active sealed file:
-- Recomputes SHA-256 hash and compares to stored hash
-- Verifies HMAC signature against stored key
-
-Exit code 0 = all pass, exit code 1 = any failure. Designed for CI/CD gates.
-
-### `rotate-keys`
-
-```bash
-agent-context-guard rotate-keys [-a AUTHOR]
-```
-
-Generates a new 32-byte HMAC key, re-signs all active seal records with the new key, and logs the rotation event. The old key is overwritten on disk.
-
-<br>
-
-## 5. Python API Reference
-
-### `read_md(file_path, *, agent_id, root)`
-
-Read a protected file with policy enforcement and audit logging.
+The `Guard.read()` method is the primary way agents access protected files:
 
 ```python
-from agent_context_guard import read_md
+from agent_context_guard import Guard
 
-content = read_md("prompts/persona.md", agent_id="my-agent")
+guard = Guard("/path/to/project")
+
+# Basic read — verified, policy-checked, audited
+content = guard.read("prompts/persona.md", agent_id="my-agent")
 ```
 
-- If a runtime guard is active, uses full enforcement (policy + integrity + audit)
-- Otherwise, performs offline seal verification
-- **Raises:** `PolicyDeniedError`, `SealIntegrityError`, `SealNotFoundError`
+Every call to `guard.read()` performs the following, in order:
 
-### `propose_update(file_path, new_content, *, agent_id, justification, root, metadata)`
+1. Resolves the file path to an absolute path
+2. Looks up the active seal record in the inventory
+3. Evaluates policy: can this agent read this file?
+4. Reads the file into memory (single disk read)
+5. Computes SHA-256 hash of the in-memory buffer
+6. Compares hash against the seal record
+7. Verifies the HMAC signature with the signing key
+8. Appends an entry to the hash-chained audit log
+9. Returns the verified content
 
-Submit a change proposal for human review. Returns the proposal ID.
+If any step fails, an exception is raised and the read is denied.
+
+### Using Sessions
+
+For agents that read multiple files, sessions reduce boilerplate:
 
 ```python
-from agent_context_guard import propose_update
+with guard.session(agent_id="my-agent") as s:
+    persona = s.read("prompts/persona.md")
+    rules = s.read("prompts/rules.md")
+    tools = s.read("prompts/tools.md")
+```
 
-pid = propose_update(
+Sessions pre-bind the `agent_id` so you don't need to pass it on every call.
+
+<br>
+
+## Proposing Changes
+
+Agents can propose changes but never approve them:
+
+```python
+proposal_id = guard.propose(
     "prompts/persona.md",
-    "# New Persona\n\nUpdated content.\n",
+    new_content="# Updated Persona\n\nYou are a helpful, concise assistant.\n",
     agent_id="my-agent",
-    justification="Improved tone"
+    justification="Made the persona more concise per user feedback",
+)
+print(f"Proposal submitted: {proposal_id}")
+```
+
+Proposals are stored as unified diffs in `.agent-context-guard/proposals/` for human review.
+
+<br>
+
+## Reviewing and Approving Proposals
+
+### View Pending Proposals
+
+```bash
+# List all files with pending proposals
+acg diff
+
+# View diffs for a specific file
+acg diff prompts/persona.md
+```
+
+### Approve a Proposal
+
+```bash
+acg approve prompts/persona.md
+```
+
+This displays the proposal details, shows the diff, and asks for confirmation. On approval:
+
+- The file is overwritten with the proposed content
+- A new seal record is created (version incremented)
+- The proposal is marked as approved
+- An audit entry is logged
+
+### Reject a Proposal
+
+```bash
+acg reject prompts/persona.md
+```
+
+<br>
+
+## Running Agents Under the Guard
+
+The `acg run` command verifies all seals before launching your agent:
+
+```bash
+acg run -- python my_agent.py
+acg run -- node agent.js --verbose
+```
+
+This:
+
+1. Verifies all protected files pass integrity checks
+2. Sets `ACG_GUARD_ROOT` in the environment
+3. Runs your command
+4. Logs the subprocess start and exit to the audit trail
+
+If any file fails verification, the command is not run.
+
+<br>
+
+## Human Edit Sessions
+
+Edit protected files through an audited workflow:
+
+```bash
+acg edit prompts/persona.md
+acg edit prompts/persona.md --editor code  # Use VS Code
+```
+
+The edit session:
+
+1. Opens a temporary copy in your editor
+2. Shows a diff when you save
+3. Asks for confirmation
+4. Atomically writes the new content
+5. Re-seals with a new version
+6. Logs the edit to the audit trail
+
+**Note:** Edit sessions require an interactive terminal (TTY). This prevents agents from calling `acg edit` to bypass the proposal workflow.
+
+<br>
+
+## Monitoring and Status
+
+### Check Protection Status
+
+```bash
+acg status
+```
+
+The status command runs a **silent integrity verification** before displaying results. If a file has been modified outside the guard, it will show a `TAMPERED` state:
+
+```
+┌─────────────────────┬──────────┬─────────┬────────┬──────────────┬───────────┐
+│ File                │  State   │ Version │ Author │    Sealed At │ Proposals │
+├─────────────────────┼──────────┼─────────┼────────┼──────────────┼───────────┤
+│ prompts/persona.md  │ ACTIVE   │    2    │ human  │ 2026-02-18…  │     0     │
+│ prompts/rules.md    │ TAMPERED │    1    │ human  │ 2026-02-17…  │     0     │
+└─────────────────────┴──────────┴─────────┴────────┴──────────────┴───────────┘
+```
+
+<br>
+
+## Tamper Detection and Recovery
+
+When a protected file is modified outside the guard (by an agent, a script, or manual editing without `acg edit`), the `acg recover` command provides a clear workflow:
+
+```bash
+acg recover prompts/rules.md
+```
+
+This command:
+
+1. Shows a visual summary of what changed
+2. Displays a diff between the sealed version and the current content (when available)
+3. Presents three options:
+   - **[R] Rollback** — restore the file to its last sealed content
+   - **[A] Accept** — re-seal the file with the current (changed) content
+   - **[C] Cancel** — take no action
+
+All recovery actions are logged to the audit trail.
+
+<br>
+
+## Audit Log
+
+View the audit trail:
+
+```bash
+# Show recent entries (default: 50)
+acg audit
+
+# Show more entries
+acg audit -n 100
+
+# Filter by event type
+acg audit -e file_read
+
+# Filter by file
+acg audit -f prompts/persona.md
+
+# Filter by actor
+acg audit -a my-agent
+
+# View archived audit logs
+acg audit --archives
+```
+
+### Audit Failsafe
+
+To prevent unbounded log growth, the audit log automatically archives when it exceeds a configurable entry threshold (default: 10,000 entries). Archives are stored in `.agent-context-guard/backups/` with timestamps.
+
+Configure the threshold via environment variable:
+
+```bash
+export ACG_AUDIT_MAX_ENTRIES=5000
+```
+
+<br>
+
+## Key Rotation
+
+Rotate the signing key periodically or after a suspected compromise:
+
+```bash
+acg rotate-keys
+```
+
+This generates a new HMAC signing key and re-signs all protected files and guard metadata. The old key is overwritten.
+
+<br>
+
+## CI/CD Integration
+
+Add integrity verification to your CI/CD pipeline:
+
+```bash
+acg verify
+```
+
+This exits with code 0 if all files pass, code 1 if any fail. Example GitHub Actions step:
+
+```yaml
+- name: Verify agent context integrity
+  run: |
+    pip install agent-context-guard
+    acg verify
+```
+
+<br>
+
+## Framework Adapters
+
+### LangChain
+
+```python
+from agent_context_guard import Guard
+from agent_context_guard.adapters.langchain import ProtectedMarkdownLoader
+
+guard = Guard("/path/to/project")
+loader = ProtectedMarkdownLoader("prompts/persona.md", guard=guard, agent_id="my-agent")
+docs = loader.load()  # Returns verified LangChain Documents
+```
+
+### OpenAI Function Calling
+
+```python
+from agent_context_guard.adapters.openai_tools import create_openai_tools
+
+tools, handler = create_openai_tools(guard, agent_id="my-openai-agent")
+response = client.chat.completions.create(model="gpt-4", messages=messages, tools=tools)
+```
+
+### Anthropic Tool Use
+
+```python
+from agent_context_guard.adapters.anthropic_tools import create_anthropic_tools
+
+tools, handler = create_anthropic_tools(guard, agent_id="my-claude-agent")
+response = client.messages.create(model="claude-sonnet-4-20250514", messages=messages, tools=tools)
+```
+
+### CrewAI
+
+```python
+from agent_context_guard.adapters.crewai import create_context_tools
+
+read_tool, propose_tool = create_context_tools(guard, agent_id="my-crew-agent")
+agent = Agent(role="Analyst", tools=[read_tool, propose_tool])
+```
+
+### LlamaIndex
+
+```python
+from agent_context_guard.adapters.llamaindex import ProtectedMarkdownReader
+
+reader = ProtectedMarkdownReader(guard=guard, agent_id="my-llama-agent")
+documents = reader.load_data(file_path="prompts/persona.md")
+```
+
+### AutoGen
+
+```python
+from agent_context_guard.adapters.autogen import create_function_map
+
+function_map = create_function_map(guard, agent_id="my-autogen-agent")
+user_proxy = autogen.UserProxyAgent("user_proxy", function_map=function_map)
+```
+
+### MCP (Model Context Protocol)
+
+```python
+from agent_context_guard.adapters.mcp import create_mcp_tools
+
+tools, handler = create_mcp_tools(guard, agent_id="mcp-agent")
+```
+
+### OpenClaw
+
+```python
+from agent_context_guard.adapters.openclaw import generate_openclaw_skill
+
+generate_openclaw_skill(
+    output_dir="~/.openclaw/skills/context-guard",
+    guard_root="/path/to/project",
 )
 ```
 
-- **Raises:** `PolicyDeniedError` if the agent is not allowed to propose
+Install adapters as needed:
 
-### `get_status(file_path, *, root)`
-
-Get protection status of a file. Returns a dict:
-
-```python
-from agent_context_guard import get_status
-
-status = get_status("prompts/persona.md")
-# {
-#     "protected": True,
-#     "state": "ACTIVE",
-#     "version": 3,
-#     "pending_proposals": 1,
-#     "author": "human",
-#     "timestamp": 1700000000.0
-# }
+```bash
+pip install agent-context-guard[langchain]
+pip install agent-context-guard[all]
 ```
 
 <br>
 
-## 6. Configuration
+## Policy Configuration
 
-### Policy File
-
-Located at `.agent-context-guard/policy.yaml`. Default:
+The policy file at `.agent-context-guard/policy.yaml` controls access:
 
 ```yaml
 read:
-  allow: all_agents
+  allow: all_agents          # All agents can read
 
 write:
-  allow: none
+  allow: none                # Direct writes always blocked
 
 propose:
-  allow: all_agents
+  allow: all_agents          # All agents can propose changes
 
 approve:
-  allow: humans
+  allow: humans              # Only humans can approve
 ```
 
-#### Policy Options for `allow`
+### Allow-list Specific Agents
+
+```yaml
+read:
+  allow:
+    - agent-alpha
+    - agent-beta
+
+propose:
+  allow:
+    - agent-alpha
+```
+
+### Policy Options
 
 | Value | Meaning |
 |-------|---------|
 | `all_agents` | Any agent identity is permitted |
-| `humans` | Only human actors (determined by `actor_type`) |
-| `none` | No one — operation is universally denied |
-| `["agent-1", "agent-2"]` | Allow-list of specific agent IDs |
-
-#### Important Requirements
-
-- `write.allow` should always be `none` — this is the core safety requirement. Direct writes to protected files are blocked regardless of this setting during runtime.
-- `approve.allow` only accepts `humans` — agents can never approve proposals.
-
-### Environment Variables
-
-| Variable | Purpose |
-|----------|---------|
-| `ACG_GUARD_ROOT` | Override guard root directory discovery |
-| `ACG_RUNTIME_KEY` | Ephemeral Fernet key (set automatically by `run`) |
-| `EDITOR` | Editor for `edit` command (default: `vi`) |
+| `humans` | Only human actors (via CLI) |
+| `none` | Operation is denied for everyone |
+| `[list]` | Only the listed agent IDs are permitted |
 
 <br>
 
-## 7. Security Model
+## Security Model
 
-### Threat Model (In Scope)
+Protection is enforced at the API level. Agents access files through `Guard.read()`, which performs cryptographic verification, enforces policy, and produces an audit trail.
 
-- Unauthorized modification of agent markdown files
-- Agent self-mutation via tool access
-- Prompt injection leading to file tampering
-- Confused deputy file writes
-- Silent behavioral drift without code changes
-- Unauthorized reads during agent execution
-- Accidental edits by insiders
+The library does **not** attempt to intercept raw filesystem calls. The trust boundary is the same as any tool-use framework: agents can only use the tools you give them. If you provide `Guard.read()` as the file-reading tool and don't expose raw `open()`, the agent has no way to bypass verification.
 
-### Threat Model (Out of Scope)
+For environments requiring OS-level enforcement, combine with file permissions, containers, or namespace isolation.
 
-- Full host compromise / root access
-- Kernel-level adversaries
-- Model exfiltration via side channels
-- Malicious human operators with full approval authority
+### What Is Protected
 
-### Cryptographic Primitives
+- File **content integrity** SHA-256 hash + HMAC signature
+- Guard **metadata integrity** HMAC sidecars for inventory and policy
+- **Audit trail integrity** hash-chained log entries
 
-| Purpose | Algorithm | Details |
-|---------|-----------|---------|
-| Content hashing | SHA-256 | 64-char hex digest |
-| Seal signatures | HMAC-SHA256 | 32-byte key, constant-time comparison |
-| Runtime encryption | Fernet (AES-128-CBC + HMAC) | Ephemeral key, memory-only |
+### What Is NOT Protected
 
-### File Lifecycle States
-
-```
-UNSEALED → SEALED → ACTIVE → DEPRECATED → REVOKED
-```
-
-| State | Readable | Proposable | Description |
-|-------|----------|------------|-------------|
-| `UNSEALED` | No | No | Not yet protected |
-| `SEALED` | Yes | Yes | Hash + signature registered |
-| `ACTIVE` | Yes | Yes | Currently approved version |
-| `DEPRECATED` | No | No | Superseded by newer version |
-| `REVOKED` | No | No | Blocked from all use |
+- File confidentiality (content is not encrypted)
+- Network transport (use TLS for remote access)
+- OS-level file permissions (use containers or ACLs)
 
 <br>
 
-## 8. Integration Patterns
-
-### Pattern 1: CLI Wrapper (Zero Code Changes)
-
-The simplest integration — wrap your existing command:
-
-```bash
-# Before
-python my_agent.py
-
-# After
-agent-context-guard run -- python my_agent.py
-```
-
-No code changes. The guard verifies files at startup and monitors the process.
-
-### Pattern 2: Python API (Explicit Calls)
-
-Use `read_md` and `propose_update` in your agent code:
-
-```python
-from agent_context_guard import read_md, propose_update
-
-# Agent reads its persona
-persona = read_md("prompts/persona.md", agent_id="my-agent")
-
-# Agent proposes changes (human must approve)
-propose_update(
-    "prompts/persona.md",
-    updated_persona,
-    agent_id="my-agent",
-    justification="User requested tone change"
-)
-```
-
-### Pattern 3: Python Interceptor (Transparent)
-
-Monkey-patch `open()` and `Path.read_text()` so all file reads are intercepted:
-
-```python
-from agent_context_guard.interceptors.python_hook import install, uninstall
-from agent_context_guard.core.runtime import RuntimeGuard
-from pathlib import Path
-
-guard = RuntimeGuard(Path("."))
-guard.start()
-install()
-
-# All open() and Path.read_text() calls on protected .md files
-# are now routed through the guard automatically
-
-# ... run your agent ...
-
-uninstall()
-guard.stop()
-```
-
-### Pattern 4: Framework Adapter
-
-```python
-from agent_context_guard.adapters.base import LangChainAdapter
-
-adapter = LangChainAdapter(agent_id="langchain-agent")
-
-# Returns {"page_content": "...", "metadata": {...}}
-doc = adapter.load_document("prompts/system.md")
-
-# Submit a proposal
-adapter.propose("prompts/system.md", new_content, justification="Refine instructions")
-```
-
-<br>
-
-## 9. Proposal Workflow
-
-Agents can propose changes but **never** approve or activate them.
-
-### Agent Submits a Proposal
-
-```python
-from agent_context_guard import propose_update
-
-pid = propose_update(
-    "prompts/persona.md",
-    "# Updated\n\nNew content.\n",
-    agent_id="agent-x",
-    justification="Better phrasing"
-)
-print(f"Proposal submitted: {pid}")
-```
-
-### Human Reviews
-
-```bash
-# See what changed
-agent-context-guard diff prompts/persona.md
-
-# Approve
-agent-context-guard approve prompts/persona.md
-
-# Or reject
-agent-context-guard reject prompts/persona.md
-```
-
-### Proposal Storage
-
-Proposals are stored as JSON in `.agent-context-guard/proposals/<safe-filename>/`:
-
-```json
-{
-  "proposal_id": "1700000000_a1b2c3d4",
-  "file_path": "/abs/path/prompts/persona.md",
-  "agent_id": "agent-x",
-  "timestamp": 1700000000.0,
-  "diff": "--- a/persona.md\n+++ b/persona.md\n...",
-  "justification": "Better phrasing",
-  "status": "pending",
-  "new_content": "# Updated\n\nNew content.\n"
-}
-```
-
-<br>
-
-## 10. Human Edit Sessions
-
-Humans can edit protected files even while the agent is running.
-
-```bash
-agent-context-guard edit prompts/persona.md
-```
-
-**Guarantees:**
-- The agent cannot read or write the file during editing (file is locked)
-- Partial writes are impossible (atomic write via temp file + rename)
-- All edits are audited with diff metadata
-- The file is automatically re-sealed as a new version
-
-**Editor selection** (in priority order):
-1. `--editor` flag
-2. `$EDITOR` environment variable
-3. `vi` (fallback)
-
-<br>
-
-## 11. CI/CD Integration
-
-### GitHub Actions Example
-
-```yaml
-name: Verify Agent Context Integrity
-on: [push, pull_request]
-jobs:
-  verify:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-      - run: pip install agent-context-guard
-      - run: agent-context-guard verify
-```
-
-### Pre-commit Hook
-
-```bash
-#!/bin/sh
-# .git/hooks/pre-commit
-agent-context-guard verify
-```
-
-### What `verify` Checks
-
-1. Every active sealed file exists on disk
-2. SHA-256 hash matches the stored hash (detects any content change)
-3. HMAC signature is valid (detects inventory tampering)
-
-<br>
-
-## 12. Key Management
-
-### Signing Key
-
-- Location: `.agent-context-guard/keys/signing.key`
-- Size: 32 bytes (256 bits)
-- Permissions: `0600` (owner read/write only)
-- **Must be excluded from version control** (handled by `.gitignore`)
-
-### Key Rotation
-
-```bash
-agent-context-guard rotate-keys
-```
-
-This command:
-1. Generates a new 32-byte random key
-2. Re-signs every active seal record with the new key
-3. Overwrites the old key on disk
-4. Logs the rotation in the audit trail
-
-**When to rotate:**
-- Team member departure
-- Suspected key compromise
-- Periodic rotation policy (e.g., quarterly)
-
-### Key Backup
-
-The signing key is the root of trust. If lost, you must re-protect all files:
-
-```bash
-# If key is lost, re-initialize
-rm -rf .agent-context-guard
-agent-context-guard init
-agent-context-guard protect 'prompts/*.md'
-```
-
-<br>
-
-## 13. Audit Log
-
-### Format
-
-The audit log at `.agent-context-guard/audit.log` is append-only JSON Lines (one JSON object per line):
-
-```json
-{"timestamp":1700000000.0,"event":"file_read","actor":"agent-x","file_path":"/path/persona.md","operation":"read","result":"allowed","detail":"","metadata":{}}
-{"timestamp":1700000001.0,"event":"write_blocked","actor":"agent-x","file_path":"/path/persona.md","operation":"write","result":"denied","detail":"Direct write blocked by runtime guard","metadata":{}}
-```
-
-### Event Types
-
-| Event | Description |
-|-------|-------------|
-| `file_read` | File read (allowed or denied) |
-| `write_blocked` | Write attempt blocked |
-| `proposal_submitted` | Agent submitted a proposal |
-| `proposal_approved` | Human approved a proposal |
-| `proposal_rejected` | Human rejected a proposal |
-| `edit_started` | Human edit session began |
-| `edit_saved` | Human edit session saved changes |
-| `edit_no_changes` | Human edit session closed without changes |
-| `file_sealed` | File was sealed (new version) |
-| `policy_denied` | Policy engine denied an operation |
-| `guard_started` | Runtime guard activated |
-| `guard_stopped` | Runtime guard deactivated |
-| `subprocess_started` | Guarded subprocess launched |
-| `subprocess_exited` | Guarded subprocess exited |
-| `key_rotation` | Signing key was rotated |
-| `verify` | Seal verification (pass or fail) |
-| `initialized` | Guard directory was initialized |
-
-### Querying
-
-```bash
-# All entries
-agent-context-guard audit
-
-# Filter by event
-agent-context-guard audit -e write_blocked
-
-# Filter by file
-agent-context-guard audit -f prompts/persona.md
-
-# Filter by actor
-agent-context-guard audit -a agent-x
-
-# Limit results
-agent-context-guard audit -n 20
-```
-
-<br>
-
-## 14. Python Interceptor
-
-The interceptor monkey-patches `builtins.open()` and `pathlib.Path.read_text()` so that any code reading protected markdown files is transparently routed through the guard.
-
-```python
-from agent_context_guard.interceptors.python_hook import install, uninstall, is_installed
-
-install()       # Activate interception
-is_installed()  # True
-uninstall()     # Restore originals
-```
-
-**What it does:**
-- Read calls on protected `.md` files → routed through `RuntimeGuard.read_file()` (policy + integrity + audit)
-- Write/append calls on protected `.md` files → blocked with `PolicyDeniedError`
-- All other file operations → passed through to original functions
-
-**Limitations:**
-- Only intercepts Python-level file access (not C extensions or subprocess I/O)
-- Requires an active `RuntimeGuard` to enforce — without one, passes through silently
-- Not a security boundary against determined adversaries in the same process
-
-<br>
-
-## 15. Framework Adapters
-
-### BaseAdapter
-
-All adapters inherit from `BaseAdapter` which provides `load()`, `propose()`, and `status()` methods that delegate to the Layer 1 Python API.
-
-```python
-from agent_context_guard.adapters.base import BaseAdapter
-
-adapter = BaseAdapter(root="/path/to/project", agent_id="my-agent")
-content = adapter.load("prompts/system.md")
-```
-
-### LangChainAdapter
-
-Returns data compatible with LangChain's Document format:
-
-```python
-from agent_context_guard.adapters.base import LangChainAdapter
-
-adapter = LangChainAdapter(agent_id="lc-agent")
-doc = adapter.load_document("prompts/system.md")
-# doc = {
-#     "page_content": "...",
-#     "metadata": {"source": "...", "protected": True, "version": 2, "state": "ACTIVE"}
-# }
-```
-
-### Writing Custom Adapters
-
-```python
-from agent_context_guard.adapters.base import BaseAdapter
-
-class MyFrameworkAdapter(BaseAdapter):
-    def load_prompt(self, path: str) -> MyFrameworkPrompt:
-        content = self.load(path)
-        return MyFrameworkPrompt(text=content, metadata=self.status(path))
-```
-
-<br>
-
-## 16. Troubleshooting
+## Troubleshooting
 
 ### "No .agent-context-guard directory found"
 
-Run `agent-context-guard init` in your project root, or set `ACG_GUARD_ROOT` to point to the correct directory.
-
-### "Seal verification failed" on `run`
-
-A protected file has been modified outside the guard. Options:
-1. Revert the file to its original content
-2. Re-protect the file: `agent-context-guard protect <file>` (creates a new sealed version)
-3. Check `git diff` for unexpected changes
+Run `acg init` in your project root.
 
 ### "Signing key not found"
 
-The key at `.agent-context-guard/keys/signing.key` is missing. If you've lost it, you must re-initialize:
+The `.agent-context-guard/keys/signing.key` file is missing. Re-initialize with `acg init`.
+
+### Status shows ACTIVE but file was changed
+
+This should no longer happen in v1.0.1. The `acg status` command now runs a silent integrity check. If you still see this, run `acg verify` explicitly.
+
+### "Editor not found"
+
+Set the `$EDITOR` environment variable or pass `--editor`:
 
 ```bash
-rm -rf .agent-context-guard
-agent-context-guard init
-agent-context-guard protect 'prompts/*.md'
+export EDITOR=nano
+acg edit prompts/persona.md
+
+# Or directly:
+acg edit prompts/persona.md --editor code
 ```
 
-### Editor not found during `edit`
+### Audit log growing too large
 
-Set your editor: `export EDITOR=nano` or pass `--editor nano`.
-
-### "File is locked for human editing"
-
-A previous edit session may not have closed cleanly. Remove stale locks:
+The audit log auto-archives at 10,000 entries by default. To change the threshold:
 
 ```bash
-rm .agent-context-guard/locks/*
+export ACG_AUDIT_MAX_ENTRIES=5000
 ```
 
-### Permission denied on signing key
-
-The key requires `0600` permissions. Fix with:
+View archives with:
 
 ```bash
-chmod 600 .agent-context-guard/keys/signing.key
+acg audit --archives
 ```
 
 <br>
 
-## 17. Development
-
-### Setup
-
-```bash
-git clone https://github.com/kahalewai/agent-context-guard.git
-cd agent-context-guard
-pip install -e ".[dev]"
-```
-
-### Run Tests
-
-```bash
-pytest tests/ -v
-```
-
-The test suite includes 40 tests covering:
-- Sealing (hashing, signing, verification, tamper detection, key rotation)
-- Inventory (CRUD, state transitions, versioning, revocation)
-- Policy engine (all operations, all actor types, allow-lists)
-- Audit logging (write, filter, count)
-- Proposals (create, approve, reject, idempotency, listing)
-- Runtime guard (start/stop, read, write blocking, locking, tamper detection, encryption)
-- Public API (read_md, propose_update, get_status)
-
-### Lint
-
-```bash
-ruff check src/ tests/
-```
-
-<br>
-
-## 18. Architecture Deep Dive
-
-### Core Requirement
-
-> The agent never gains authority. The human never loses ownership. The guard never acts implicitly.
-
-This requirement holds across all operations. The policy engine enforces it deterministically without any LLM involvement.
-
-### Layered Architecture
-
-```
-Layer 3: Framework Adapters (LangChain, custom)
-    ↓ calls
-Layer 1: Python API (read_md, propose_update, get_status)
-    ↓ calls
-Layer 2: Interceptors (optional — monkey-patch open/read_text)
-    ↓ calls
-Core: Policy Engine + Runtime + Seal + Inventory + Audit + Proposals
-```
-
-Adapters call Layer 1 only. They never implement security logic. All enforcement happens in the Core.
-
-### Seal Model
-
-Every protected file has a `SealRecord`:
-
-```python
-@dataclass(frozen=True)
-class SealRecord:
-    file_path: str       # Absolute path
-    content_hash: str    # SHA-256 hex digest
-    signature: str       # HMAC-SHA256 hex digest
-    version: int         # Monotonically increasing
-    timestamp: float     # Unix timestamp
-    author: str          # Who sealed it
-    state: str           # UNSEALED/SEALED/ACTIVE/DEPRECATED/REVOKED
-    metadata: dict       # Extensible
-```
-
-No semantic interpretation of file contents is performed. The guard treats files as opaque byte sequences.
-
-### Inventory
-
-The inventory is a JSON file with atomic writes (write to temp file, then rename). This prevents corruption from crashes or concurrent access. Schema:
-
-```json
-{
-  "version": 1,
-  "files": {
-    "/abs/path/file.md": [
-      {"file_path": "...", "content_hash": "...", "signature": "...", ...},
-      {"file_path": "...", "content_hash": "...", "signature": "...", ...}
-    ]
-  }
-}
-```
-
-Adding a new version automatically deprecates all previous active versions of the same file.
-
-### Runtime Key Lifecycle
-
-1. `run` generates a Fernet key via `Fernet.generate_key()`
-2. Key exists only in Python process memory
-3. Key is passed to subprocess via `ACG_RUNTIME_KEY` environment variable
-4. On exit, key bytes are overwritten with zeros before dereferencing
-5. No key material is ever written to disk
-
-### Policy Engine
-
-Decisions are pure functions of: `(actor, actor_type, operation, file_state, policy_rules)`. No network calls, no LLM calls, no randomness. The engine is fully deterministic and testable.
-
-### Error Handling
-
-The exception hierarchy:
-
-```
-AgentContextGuardError (base)
-├── SealError
-│   ├── SealIntegrityError       # File contents changed
-│   └── SealNotFoundError        # No seal record for file
-├── PolicyDeniedError            # Policy rejected the operation
-├── RuntimeNotActiveError        # Operation needs active guard
-├── RuntimeAlreadyActiveError    # Guard already running
-├── FileLockedError              # File locked for editing
-├── ProposalError                # Proposal workflow error
-├── InventoryError
-│   └── InventoryCorruptedError  # JSON parse failure
-├── GuardNotInitializedError     # No .agent-context-guard/
-├── EditSessionError             # Edit session failure
-└── KeyManagementError           # Key gen/load/rotate failure
-```
-
-All exceptions inherit from `AgentContextGuardError` so callers can catch broadly or narrowly.
-
-<br>
-
-## License
-
-Apache License 2.0 — see [LICENSE](LICENSE).
+*For additional support, see the project repository at [github.com/kahalewai/agent-context-guard](https://github.com/kahalewai/agent-context-guard).*
