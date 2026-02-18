@@ -4,7 +4,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-green.svg)](https://python.org)
 [![License](https://img.shields.io/badge/License-Apache_2.0-orange.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.0-red.svg)](https://github.com/kahalewai/agent-context-guard)
+[![Version](https://img.shields.io/badge/version-1.0.1-green.svg)](https://github.com/kahalewai/agent-context-guard)
 
 </div>
 
@@ -12,17 +12,18 @@
 
 ## Intro
 
-Agent Context Guard is a runtime protection layer for AI agent markdown context files. Modern AI agents encode critical behavioral controls in plaintext markdown, persona definitions, tool instructions, rules, and skills. These files are implicitly trusted, mutable at runtime, and typically unprotected. Agent Context Guard seals these files with cryptographic signatures, detects tampering at runtime, and ensures that only humans can approve changes.
+Agent Context Guard is a runtime protection layer for AI agent markdown context files. Modern AI agents encode critical behavioral controls in plaintext markdown: persona definitions, tool instructions, rules, and skills. These files are implicitly trusted, mutable at runtime, and typically unprotected. Agent Context Guard seals these files with cryptographic signatures, detects tampering at runtime, and ensures that only humans can approve changes.
 
 Agent Context Guard is intended to:
 * Seal markdown files with cryptographic hashes and HMAC signatures
-* Detect tampering; any modification to a protected file is caught immediately
-* Block unauthorized writes during agent runtime
-* Provide a proposal workflow; agents can propose changes but never approve them
-* Preserve human ownership; edit protected files anytime through explicit sessions
-* Log everything; append-only audit trail of all access, denials, and changes
+* Detect tampering, any modification to a protected file is caught immediately
+* Provide a library-based guard API, agents call `guard.read()` for verified access
+* Provide a proposal workflow, agents can propose changes but never approve them
+* Preserve human ownership, edit protected files anytime through explicit sessions
+* Recover from tampering, view diffs and choose to rollback or accept changes
+* Log everything, append-only audit trail with automatic archival failsafe
 * Integrate into CI/CD pipelines for continuous integrity verification
-* Work with any agent framework without code changes
+* Work with any agent framework via adapters or direct API
 
 <br>
 
@@ -52,12 +53,12 @@ This means that:
 
 | Aspect                | Scope                                             |
 | --------------------- | ------------------------------------------------- |
-| Protection scope      | Markdown files (.md, .mdx, .markdown)             |
+| Protection scope      | Markdown files (.md, .markdown, .mdown, .mkd)     |
 | Signing algorithm     | SHA-256 hash + HMAC-SHA256 signature              |
 | Policy enforcement    | Deterministic, non-LLM-based                      |
-| Agent integration     | Framework agnostic (LangChain, custom, etc.)      |
-| Runtime overhead      | Minimal — file-level monitoring only               |
-| Adoption model        | Zero-code-change via CLI wrapper                   |
+| Agent integration     | Framework agnostic (LangChain, CrewAI, OpenAI, Anthropic, AutoGen, LlamaIndex, MCP, OpenClaw) |
+| Runtime overhead      | Minimal, file-level verification only             |
+| Adoption model        | Library API with CLI tooling                       |
 
 <br>
 
@@ -70,39 +71,51 @@ This means that:
 pip install agent-context-guard
 
 # Verify installation
-agent-context-guard --version
+acg --version
 ```
 
 ### Basic Usage
 
 ```bash
 # 1. Initialize in your project directory
-agent-context-guard init
+acg init
 
 # 2. Protect your agent's context files
-agent-context-guard protect prompts/*.md
+acg protect prompts/*.md
 
 # 3. Run your agent under the guard
-agent-context-guard run -- python my_agent.py
+acg run -- python my_agent.py
 
 # 4. Verify integrity (CI/CD)
-agent-context-guard verify
+acg verify
 ```
 
 ### Python API
 
 ```python
-from agent_context_guard import read_md, propose_update, get_status
+from agent_context_guard import Guard
+
+# Initialize with your project root
+guard = Guard("/path/to/project")
 
 # Read a protected file (with policy enforcement + audit)
-content = read_md("prompts/persona.md", agent_id="my-agent")
+content = guard.read("prompts/persona.md", agent_id="my-agent")
 
 # Propose an update (requires human approval)
-propose_update("prompts/persona.md", new_content, agent_id="my-agent",
-               justification="Updated greeting style")
+guard.propose(
+    "prompts/persona.md",
+    new_content="# Updated Persona\n...",
+    agent_id="my-agent",
+    justification="Updated greeting style",
+)
 
 # Check protection status
-status = get_status("prompts/persona.md")
+status = guard.status("prompts/persona.md")
+
+# Scoped sessions for cleaner agent code
+with guard.session(agent_id="my-agent") as s:
+    persona = s.read("prompts/persona.md")
+    rules = s.read("prompts/rules.md")
 ```
 
 For complete setup instructions, see the [Implementation Guide](./IMPLEMENTATION_GUIDE.md).
@@ -114,48 +127,52 @@ For complete setup instructions, see the [Implementation Guide](./IMPLEMENTATION
 ```
 src/agent_context_guard/
 ├── __init__.py              # Public API exports
-├── api.py                   # Python wrapper (read_md, propose_update, get_status)
+├── guard.py                 # Central API (Guard, GuardSession)
 ├── core/
-│   ├── audit.py             # Append-only JSON Lines audit logger
+│   ├── audit.py             # Append-only JSON Lines audit logger with archival
 │   ├── constants.py         # Paths, defaults, file extensions
-│   ├── edit.py              # Human edit session lifecycle
 │   ├── exceptions.py        # Full exception hierarchy
 │   ├── inventory.py         # Atomic-write seal record registry
 │   ├── policy.py            # Deterministic policy engine
 │   ├── proposals.py         # Agent proposal workflow
-│   ├── runtime.py           # Runtime guard (ephemeral keys, subprocess, locking)
 │   ├── seal.py              # SHA-256 hashing + HMAC-SHA256 signing
 │   └── selfprotect.py       # Guard metadata self-protection
 ├── cli/
 │   ├── helpers.py           # Rich terminal output helpers
 │   └── main.py              # All CLI commands (Click)
-├── adapters/
-│   └── base.py              # BaseAdapter + LangChain adapter
-└── interceptors/
-    └── python_hook.py       # Monkey-patch open()/Path.read_text()
+└── adapters/
+    ├── anthropic_tools.py   # Anthropic Claude tool-use adapter
+    ├── autogen.py           # AutoGen / AG2 adapter
+    ├── crewai.py            # CrewAI tool adapter
+    ├── langchain.py         # LangChain document loader adapter
+    ├── llamaindex.py        # LlamaIndex reader adapter
+    ├── mcp.py               # Model Context Protocol adapter
+    ├── openclaw.py          # OpenClaw skill adapter
+    └── openai_tools.py      # OpenAI function-calling adapter
 ```
 
 <br>
 
 ## CLI Commands
 
-Agent Context Guard provides a complete CLI for managing protected files:
+Agent Context Guard provides a complete CLI via the `acg` command:
 
 | Command | Description |
 |---------|-------------|
-| `init` | Initialize guard in a directory |
-| `protect` | Register markdown files for protection |
-| `run` | Run a command under the runtime guard |
-| `edit` | Open a human edit session for a protected file |
-| `status` | Show protection status of files |
-| `diff` | Show pending proposal diffs |
-| `approve` | Approve a pending proposal and apply changes |
-| `reject` | Reject a pending proposal |
-| `audit` | Display the audit log |
-| `verify` | CI/CD verification of sealed files and metadata |
-| `rotate-keys` | Rotate the signing key and re-sign all files |
+| `acg init` | Initialize guard in a directory |
+| `acg protect <files>` | Register markdown files for protection |
+| `acg run -- <cmd>` | Run a command under the runtime guard |
+| `acg edit <file>` | Open a human edit session for a protected file |
+| `acg status` | Show protection status (with silent integrity check) |
+| `acg diff [file]` | Show pending proposal diffs |
+| `acg approve <file>` | Approve a pending proposal and apply changes |
+| `acg reject <file>` | Reject a pending proposal |
+| `acg recover <file>` | Recover from file tampering (rollback or accept) |
+| `acg audit` | Display the audit log |
+| `acg verify` | CI/CD verification of sealed files and metadata |
+| `acg rotate-keys` | Rotate the signing key and re-sign all files |
 
-Use `agent-context-guard <command> --help` for detailed options on any command.
+Use `acg <command> --help` for detailed options on any command.
 
 <br>
 
@@ -164,24 +181,23 @@ Use `agent-context-guard <command> --help` for detailed options on any command.
 Agent Context Guard was designed to work with any AI agent framework:
 
 * No assumptions about agent framework or prompt format
-* Zero-code-change adoption via the CLI wrapper (`agent-context-guard run`)
-* Python API available for deeper integration (no CLI wrapper)
-* LangChain adapter included, extensible to other frameworks
+* Python API available for direct integration (`guard.read()`)
+* Pre-flight verification via `acg run -- <command>`
+* Adapters included for LangChain, CrewAI, OpenAI, Anthropic, AutoGen, LlamaIndex, MCP, and OpenClaw
 * Works with single-agent and multi-agent systems
-* Protection activates only under `agent-context-guard run`
-* No interference with normal development
 * All operations are logged to an append-only audit trail
-* Policy enforcement is deterministic; no LLM-based decisions
+* Policy enforcement is deterministic, no LLM-based decisions
 
 <br>
 
 ## Key Design Principles
 
-* **Runtime-only enforcement** - protection activates only under `run`
-* **Framework agnostic** - no assumptions about agent framework or prompt format
-* **Deterministic control** - all decisions are non-LLM-based
-* **Zero-code-change adoption** - use the CLI wrapper, no code changes needed
-* **Agent autonomy without authority** - agents propose, humans approve
+* **Library-first architecture** agents call `guard.read()` for verified access
+* **Framework agnostic** no assumptions about agent framework or prompt format
+* **Deterministic control** all decisions are non-LLM-based
+* **Agent autonomy without authority** agents propose, humans approve
+* **Tamper recovery** detect changes and recover with `acg recover`
+* **Audit failsafe** automatic log archival prevents unbounded growth
 
 <br>
 
@@ -207,12 +223,6 @@ Agent Context Guard does not:
 ## License
 
 Apache License 2.0
-
-<br>
-
-## Documentation
-
-See the [Implementation Guide](./IMPLEMENTATION_GUIDE.md) for detailed installation, configuration, integration patterns, and maintenance procedures.
 
 <br>
 <br>
