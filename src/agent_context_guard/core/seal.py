@@ -1,5 +1,9 @@
-"""Sealing: cryptographic hashing and signature management for protected files.
+"""
+Agent Context Guard — core/seal.py
+Version: 1.0.1
+Author: Kahalewai
 
+Sealing: cryptographic hashing and signature management for protected files.
 Sealing consists of:
   - SHA-256 hash of file contents
   - HMAC-SHA256 signature using a stored signing key
@@ -12,7 +16,6 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
 import os
 import time
 from dataclasses import asdict, dataclass, field
@@ -89,7 +92,7 @@ def load_signing_key(root: Path) -> bytes:
     key_path = _signing_key_path(root)
     if not key_path.exists():
         raise KeyManagementError(
-            f"Signing key not found at {key_path}. Run 'init' first."
+            f"Signing key not found at {key_path}. Run 'acg init' first."
         )
     key = key_path.read_bytes()
     if len(key) != HMAC_KEY_LENGTH:
