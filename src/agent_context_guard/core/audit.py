@@ -1,7 +1,7 @@
 """
 Agent Context Guard — core/audit.py
 Version: 1.0.1
-Author: Agent Context Guard contributors
+Author: Kahalewai
 
 Audit Logger: append-only, hash-chained logging of all guard events.
 
