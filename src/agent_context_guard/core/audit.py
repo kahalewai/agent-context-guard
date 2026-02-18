@@ -1,4 +1,9 @@
-"""Audit Logger: append-only, hash-chained logging of all guard events.
+"""
+Agent Context Guard — core/audit.py
+Version: 1.0.1
+Author: Agent Context Guard contributors
+
+Audit Logger: append-only, hash-chained logging of all guard events.
 
 Every access, denial, proposal, approval, and edit is recorded in
 `.agent-context-guard/audit.log` as newline-delimited JSON (JSON Lines).
@@ -8,6 +13,11 @@ previous entry's JSON.  This creates a tamper-evident hash chain: any
 deletion, modification, or reordering of entries breaks the chain.
 
 Logs are designed to be both human-readable and machine-parseable.
+
+Failsafe: When the audit log exceeds a configurable entry threshold
+(default 10,000), it is automatically archived to a timestamped file
+and a fresh log is started. This prevents unbounded growth while
+preserving the full history.
 """
 
 from __future__ import annotations
@@ -16,12 +26,19 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import time
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
-from agent_context_guard.core.constants import audit_log_path
+from agent_context_guard.core.constants import (
+    audit_log_path,
+    backups_dir,
+    DEFAULT_AUDIT_MAX_ENTRIES,
+    ENV_AUDIT_MAX_ENTRIES,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +73,12 @@ class AuditEntry:
 
 
 class AuditLogger:
-    """Append-only, hash-chained audit logger writing JSON Lines."""
+    """Append-only, hash-chained audit logger writing JSON Lines.
+
+    Includes automatic archival when the log exceeds max_entries to
+    prevent unbounded growth. Archives are stored in the backups/
+    subdirectory with timestamps for identification.
+    """
 
     def __init__(self, root: Path) -> None:
         self._root = root
@@ -66,6 +88,12 @@ class AuditLogger:
             self._path.touch()
             self._path.chmod(0o644)
         self._last_hash: str = self._compute_tail_hash()
+
+        # Configurable max entries before archive rotation
+        try:
+            self._max_entries = int(os.environ.get(ENV_AUDIT_MAX_ENTRIES, DEFAULT_AUDIT_MAX_ENTRIES))
+        except ValueError:
+            self._max_entries = DEFAULT_AUDIT_MAX_ENTRIES
 
     def _compute_tail_hash(self) -> str:
         """Compute the hash of the last entry in the log (for chaining)."""
@@ -83,6 +111,7 @@ class AuditLogger:
         return hashlib.sha256(last_line.encode("utf-8")).hexdigest()
 
     def _append(self, entry: AuditEntry) -> None:
+        """Append an entry to the log, archiving if threshold is reached."""
         entry.prev_hash = self._last_hash
         json_line = entry.to_json()
         self._last_hash = hashlib.sha256(json_line.encode("utf-8")).hexdigest()
@@ -90,6 +119,45 @@ class AuditLogger:
             f.write(json_line + "\n")
             f.flush()
             os.fsync(f.fileno())
+
+        # Check if we need to archive (failsafe for excessive logs)
+        self._check_archive()
+
+    def _check_archive(self) -> None:
+        """Archive the audit log if it exceeds the configured max entries."""
+        current_count = self.entry_count
+        if current_count >= self._max_entries:
+            self._archive_log()
+
+    def _archive_log(self) -> None:
+        """Move the current audit log to the backups directory with a timestamp."""
+        bdir = backups_dir(self._root)
+        bdir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+        archive_name = f"audit_{timestamp}.log"
+        archive_path = bdir / archive_name
+
+        # Copy then truncate (preserves the file handle)
+        shutil.copy2(self._path, archive_path)
+        archive_path.chmod(0o644)
+
+        # Start a fresh log with an archival marker
+        with open(self._path, "w", encoding="utf-8") as f:
+            f.truncate(0)
+
+        # Reset the chain
+        self._last_hash = ""
+
+        # Log the archival event in the new fresh log
+        self._append(AuditEntry(
+            timestamp=time.time(),
+            event="audit_archived",
+            actor="system",
+            operation="archive",
+            result="allowed",
+            detail=f"Archived {archive_name} ({self._max_entries} entries). Fresh log started.",
+        ))
+        logger.info("Audit log archived to %s", archive_path)
 
     def verify_chain(self) -> tuple[bool, int, str]:
         """Verify the hash chain of the entire audit log.
@@ -118,6 +186,13 @@ class AuditLogger:
                     )
                 prev_hash = hashlib.sha256(stripped.encode("utf-8")).hexdigest()
         return True, count, ""
+
+    def list_archives(self) -> list[Path]:
+        """List all archived audit log files, sorted by date."""
+        bdir = backups_dir(self._root)
+        if not bdir.exists():
+            return []
+        return sorted(bdir.glob("audit_*.log"))
 
     # ── Convenience Logging Methods ───────────────────────────────────────
 
@@ -258,6 +333,18 @@ class AuditLogger:
             file_path=file_path,
             operation="verify",
             result="allowed" if success else "denied",
+            detail=detail,
+        ))
+
+    def log_recover(self, file_path: str, actor: str, action: str, detail: str = "") -> None:
+        """Log recovery workflow events (rollback, accept)."""
+        self._append(AuditEntry(
+            timestamp=time.time(),
+            event=f"recover_{action}",
+            actor=actor,
+            file_path=file_path,
+            operation="recover",
+            result="allowed",
             detail=detail,
         ))
 
